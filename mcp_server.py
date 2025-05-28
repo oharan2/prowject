@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("mcp-server")
 
 PROW_URL = "https://prow.ci.openshift.org"
+GCS_URL = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/"
 
 async def make_request(
     url: str, method: str = "GET", data: dict[str, Any] = None
@@ -73,9 +74,83 @@ async def get_latest_job_run(job_name: str):
             "start": status.get("startTime"),
             "completion": status.get("completionTime"),
             "url": status.get("url"),
+            "build_id": status.get("build_id")
         }
     except Exception as e:
         return {"error": f"Failed to fetch job info: {str(e)}"}
+
+
+@mcp.tool()
+async def get_job_logs(job_id: str):
+    """Get the logs for a specific Prow job ID.
+    
+    Args:
+        job_id: The ID of the job to get logs for
+        
+    Returns:
+        Dictionary containing the job logs or error information
+    """
+    url = f"{PROW_URL}/prowjobs.js"
+    try:
+        response = await make_request(url)
+        if not response:
+            return {"error": "No response from Prow API"}
+            
+        prowjobs = response.get("items", [])
+
+        # Find the job with matching ID
+        matching_job = next(
+            (job for job in prowjobs if job["metadata"]["name"] == job_id),
+            None
+        )
+
+        if not matching_job:
+            return {"error": f"No job found with ID: {job_id}"}
+
+        # Get the build logs URL
+        status = matching_job.get("status", {})
+        build_id = status.get("build_id")
+        job_name = matching_job.get("spec", {}).get("job")
+        
+        if not build_id or not job_name:
+            return {"error": "Could not find build ID or job name"}
+
+        return await get_build_logs(job_name, build_id)
+            
+    except Exception as e:
+        return {"error": f"Failed to fetch job info: {str(e)}"}
+
+
+@mcp.tool()
+async def get_build_logs(job_name: str, build_id: str):
+    """Get the logs for a specific build ID and job name.
+    
+    Args:
+        job_name: The name of the job
+        build_id: The build ID to get logs for
+        
+    Returns:
+        Dictionary containing the job logs or error information
+    """
+    try:
+        # Construct the artifacts URL
+        artifacts_url = f"{GCS_URL}/{job_name}/{build_id}/artifacts"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{artifacts_url}/build-log.txt")
+            response.raise_for_status()
+            logs = response.text
+            return {
+                "build_id": build_id,
+                "job_name": job_name,
+                "logs": logs,
+                "artifacts_url": artifacts_url
+            }
+    except Exception as e:
+        return {
+            "error": f"Failed to fetch logs: {str(e)}",
+            "artifacts_url": artifacts_url if 'artifacts_url' in locals() else None
+        }
 
 
 if __name__ == "__main__":
