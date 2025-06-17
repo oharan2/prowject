@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("mcp-server")
 
 PROW_URL = "https://prow.ci.openshift.org"
-GCS_URL = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/"
+GCS_URL = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs"
 
 async def make_request(
     url: str, method: str = "GET", data: dict[str, Any] = None
@@ -137,7 +137,7 @@ async def get_build_logs(job_name: str, build_id: str):
         artifacts_url = f"{GCS_URL}/{job_name}/{build_id}/artifacts"
         
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{artifacts_url}/build-log.txt")
+            response = await client.get(f"{GCS_URL}/{job_name}/{build_id}/build-log.txt")
             response.raise_for_status()
             logs = response.text
             return {
